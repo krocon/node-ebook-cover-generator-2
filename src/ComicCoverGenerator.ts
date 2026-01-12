@@ -14,26 +14,53 @@ export class ComicCoverGenerator {
     // Find all .cb* files
     const pattern = path.join(sourceDir, '**/*.cb{r,z,7,t,a}').replace(/\\/g, '/');
     const files = await glob(pattern);
+    const totalFiles = files.length;
 
-    console.log(`Found ${files.length} comic files.`);
+    console.log(`Found ${totalFiles} comic files.`);
+
+    const startTime = Date.now();
+    let processed = 0;
+    let skippedCount = 0;
+
+    const formatTime = (ms: number): string => {
+      const seconds = Math.floor(ms / 1000);
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
+    };
+
+    const updateProgress = () => {
+      const elapsed = Date.now() - startTime;
+      const estimatedTotal = processed > 0 ? (elapsed / processed) * totalFiles : 0;
+      const estimatedRemaining = estimatedTotal > 0 ? Math.max(0, estimatedTotal - elapsed) : 0;
+      
+      if (processed % 5 === 0 || processed === totalFiles) {
+        const percent = ((processed / totalFiles) * 100).toFixed(1);
+        const progressLine = `Fortschritt: ${processed}/${totalFiles} (${percent}%) | Zeit: ${formatTime(elapsed)} | Verbleibend: ${formatTime(estimatedRemaining)} | Übersprungen: ${skippedCount}`;
+        process.stdout.write(`\r${progressLine}${' '.repeat(Math.max(0, 80 - progressLine.length))}`);
+      }
+    };
 
     const concurrencyLimit = 4; // Or make it configurable
-    const chunks: string[][] = [];
     for (let i = 0; i < files.length; i += concurrencyLimit) {
-      chunks.push(files.slice(i, i + concurrencyLimit));
-    }
-
-    for (const chunk of chunks) {
+      const chunk = files.slice(i, i + concurrencyLimit);
       const results = await Promise.allSettled(chunk.map(file => this.processComic(file)));
+      
       results.forEach((result, index) => {
+        processed++;
         if (result.status === 'rejected') {
-          console.error(`Error processing ${chunk[index]}:`, result.reason);
+          console.error(`\nError processing ${chunk[index]}:`, result.reason);
+        } else if ((result as any).value === 'skipped') {
+          skippedCount++;
         }
+        updateProgress();
       });
     }
+    console.log('\nDone.');
   }
 
-  private async processComic(comicPath: string): Promise<void> {
+  private async processComic(comicPath: string): Promise<'processed' | 'skipped'> {
     const { sourceDir, outputDir, forceOverwrite, outputs } = this.options;
     
     // Determine base output path
@@ -53,11 +80,8 @@ export class ComicCoverGenerator {
     });
 
     if (pendingOutputs.length === 0) {
-      // console.log(`Skipping ${comicPath} - all covers already exist.`);
-      return;
+      return 'skipped';
     }
-
-    console.log(`Processing ${comicPath}...`);
 
     // 1. Get archive content
     const files = await ArchiveHandler.getFiles(comicPath);
@@ -65,10 +89,9 @@ export class ComicCoverGenerator {
     // 2. Detect cover
     const coverFile = ArchiveHandler.getCoverFileName(files);
     if (!coverFile) {
-      console.warn(`No cover found in ${comicPath}`);
-      return;
+      // console.warn(`No cover found in ${comicPath}`);
+      return 'skipped';
     }
-    console.log(`  Selected cover: ${coverFile}`);
 
     // 3. Extract cover to buffer
     const coverBuffer = await ArchiveHandler.extractFileToBuffer(comicPath, coverFile);
@@ -83,5 +106,7 @@ export class ComicCoverGenerator {
       
       await ImageProcessor.processImage(coverBuffer, outConfig, outPath);
     }
+
+    return 'processed';
   }
 }
