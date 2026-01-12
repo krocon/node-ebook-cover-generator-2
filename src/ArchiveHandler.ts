@@ -45,13 +45,14 @@ export class ArchiveHandler {
       });
 
       child.stderr.on('data', (data) => {
-        stderr += data.toString();
+        stderr += data.toString().replace(/\r/g, '');
       });
 
       child.on('close', (code) => {
         clearTimeout(timeout);
         if (code !== 0) {
-          return reject(new Error(`7z exited with code ${code}. Stderr: ${stderr}`));
+          const msg = stderr ? stderr.trim() : `exit code ${code}`;
+          return reject(new Error(`7z error: ${msg}`));
         }
 
         const files: string[] = [];
@@ -68,7 +69,9 @@ export class ArchiveHandler {
         resolve(files);
       });
 
-      child.on('error', reject);
+      child.on('error', (err) => {
+        reject(new Error(`7z execution failed: ${err.message}`));
+      });
     });
   }
 
@@ -112,18 +115,21 @@ export class ArchiveHandler {
       });
 
       child.stderr.on('data', (chunk) => {
-        stderr += chunk.toString();
+        stderr += chunk.toString().replace(/\r/g, '');
       });
 
       child.on('close', (code) => {
         clearTimeout(timeout);
         if (code !== 0) {
-          return reject(new Error(`7z extraction exited with code ${code}. Stderr: ${stderr}`));
+          const msg = stderr ? stderr.trim() : `exit code ${code}`;
+          return reject(new Error(`7z extraction error: ${msg}`));
         }
         resolve(Buffer.concat(chunks));
       });
 
-      child.on('error', reject);
+      child.on('error', (err) => {
+        reject(new Error(`7z extraction failed: ${err.message}`));
+      });
     });
   }
 

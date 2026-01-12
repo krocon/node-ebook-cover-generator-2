@@ -4,7 +4,8 @@ import * as path from 'path';
 
 let options: Options = {
   forceOverwrite: true,
-  sourceDir: process.env.SOURCE_DIR || 'd:/comics/_deu',
+  // sourceDir: process.env.SOURCE_DIR || 'd:/comics/_deu/y',
+  sourceDir: process.env.SOURCE_DIR || 'C:/Users/kroco/WebstormProjects/node-ebook-cover-generator-2/test',
   outputDir: process.env.OUTPUT_DIR || null,
   errorFile: 'error.txt',
   outputs: [
@@ -23,9 +24,14 @@ async function main() {
     const generator = new ComicCoverGenerator(options);
     try {
         await generator.run();
-        console.log('Finished processing comics.');
-    } catch (error) {
-        console.error('Fatal error:', error);
+    } catch (error: any) {
+        console.error('\n***************************************');
+        console.error('FATAL ERROR occurred during execution:');
+        console.error(error?.message || error);
+        if (error?.stack) {
+            console.error(error.stack);
+        }
+        console.error('***************************************\n');
         process.exit(1);
     }
 }

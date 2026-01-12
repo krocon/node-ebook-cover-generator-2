@@ -1,5 +1,6 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import * as readline from 'readline';
 import { glob } from 'glob';
 import { Options, OutputConfig } from './types';
 import { ArchiveHandler } from './ArchiveHandler';
@@ -21,6 +22,7 @@ export class ComicCoverGenerator {
     const startTime = Date.now();
     let processed = 0;
     let skippedCount = 0;
+    let lastErrorWriteCount = 0;
     const errors: {file: string, error: any}[] = [];
 
     const formatTime = (ms: number): string => {
@@ -36,10 +38,21 @@ export class ComicCoverGenerator {
       const estimatedTotal = processed > 0 ? (elapsed / processed) * totalFiles : 0;
       const estimatedRemaining = estimatedTotal > 0 ? Math.max(0, estimatedTotal - elapsed) : 0;
       
-      if (processed % 5 === 0 || processed === totalFiles) {
+      // Update at every 5th file, or every file if we have few files, or at the very end
+      if (processed % 5 === 0 || processed === totalFiles || totalFiles < 100) {
         const percent = ((processed / totalFiles) * 100).toFixed(1);
-        const progressLine = `Fortschritt: ${processed}/${totalFiles} (${percent}%) | Zeit: ${formatTime(elapsed)} | Verbleibend: ${formatTime(estimatedRemaining)} | Übersprungen: ${skippedCount}`;
-        process.stdout.write(`\r${progressLine}${' '.repeat(Math.max(0, 80 - progressLine.length))}`);
+        const progressLine = `[${percent}%] ${processed}/${totalFiles} | Zeit: ${formatTime(elapsed)} | Verbleibend: ${formatTime(estimatedRemaining)} | Fehler: ${errors.length} | Übersprungen: ${skippedCount}`;
+        
+        if (process.stdout.isTTY) {
+          readline.clearLine(process.stdout, 0);
+          readline.cursorTo(process.stdout, 0);
+          process.stdout.write(progressLine);
+        } else {
+          // Fallback for non-TTY environments: only print every 10% to avoid flooding
+          if (processed % Math.max(1, Math.floor(totalFiles / 10)) === 0 || processed === totalFiles) {
+             process.stdout.write(`\n${progressLine}`);
+          }
+        }
       }
     };
 
@@ -49,46 +62,73 @@ export class ComicCoverGenerator {
       const results = await Promise.allSettled(chunk.map(file => this.processComic(file)));
       
       results.forEach((result, index) => {
-        processed++;
-        if (result.status === 'rejected') {
-          errors.push({ file: chunk[index], error: result.reason });
-          const errorMsg = (result.reason instanceof Error ? result.reason.message : String(result.reason)).trim();
-          // Show the first line of the error and the second line if it contains the actual 7z error
-          const lines = errorMsg.split('\n');
-          let displayMsg = lines[0];
-          if (lines.length > 1 && lines[1].trim()) {
-            displayMsg += ' | ' + lines[1].trim();
+        try {
+          processed++;
+          if (result.status === 'rejected') {
+            errors.push({ file: chunk[index], error: result.reason });
+            const errorMsg = (result.reason instanceof Error ? result.reason.message : String(result.reason)).trim();
+            const displayMsg = errorMsg.split('\n')[0].trim();
+            
+            if (process.stdout.isTTY) {
+              readline.clearLine(process.stdout, 0);
+              readline.cursorTo(process.stdout, 0);
+            } else {
+              process.stdout.write('\n');
+            }
+            console.log(`Fehler bei ${chunk[index]}:\n  ${displayMsg}`);
+          } else if ((result as any).value === 'skipped') {
+            skippedCount++;
           }
-          process.stdout.write(`\nError processing ${chunk[index]}: ${displayMsg}\n`);
-        } else if ((result as any).value === 'skipped') {
-          skippedCount++;
+          updateProgress();
+        } catch (e) {
+          if (process.stdout.isTTY) {
+            readline.clearLine(process.stdout, 0);
+            readline.cursorTo(process.stdout, 0);
+          }
+          console.error(`Unerwarteter Fehler bei der Ergebnisverarbeitung: ${e}`);
         }
-        updateProgress();
       });
 
-      // Write error file every 10 files if errors exist
-      if (processed % 10 === 0) {
+      // Write error file approximately every 10 files if errors exist
+      if (processed >= lastErrorWriteCount + 10) {
         await this.writeErrorFile(errors);
+        lastErrorWriteCount = processed;
       }
     }
     
     if (errors.length > 0) {
-      console.log(`\n\nCompleted with ${errors.length} errors.`);
-      if (errors.length <= 10) {
-        errors.forEach(e => console.log(`- ${e.file}: ${e.error.message || e.error}`));
+      console.log(`\n\nAbgeschlossen mit ${errors.length} ${errors.length === 1 ? 'Fehler' : 'Fehlern'}.`);
+      const displayLimit = 10;
+      if (errors.length <= displayLimit) {
+        errors.forEach(e => {
+          const msg = e.error.message || String(e.error);
+          console.log(`- ${e.file}:\n  ${msg.replace(/\n/g, '\n  ')}`);
+        });
       } else {
-        console.log('See above for individual error messages.');
+        console.log(`Die ersten ${displayLimit} Fehler:`);
+        errors.slice(0, displayLimit).forEach(e => {
+          const msg = e.error.message || String(e.error);
+          console.log(`- ${e.file}:\n  ${msg.replace(/\n/g, '\n  ')}`);
+        });
+        console.log(`... und ${errors.length - displayLimit} weitere Fehler. Siehe ${this.options.errorFile} für Details.`);
       }
 
       await this.writeErrorFile(errors);
     }
-    console.log('\nDone.');
+    console.log('\nFertig.');
   }
 
   private async writeErrorFile(errors: {file: string, error: any}[]): Promise<void> {
-    if (this.options.errorFile && errors.length > 0) {
-      const errorLog = errors.map(e => `${e.file}: ${e.error.message || e.error}`).join('\n');
-      await fs.writeFile(this.options.errorFile, errorLog, 'utf8');
+    try {
+      if (this.options.errorFile && errors.length > 0) {
+        const errorLog = errors.map(e => {
+          const msg = (e.error.message || String(e.error)).replace(/\r?\n/g, ' | ');
+          return `${e.file}: ${msg}`;
+        }).join('\n');
+        await fs.writeFile(this.options.errorFile, errorLog, 'utf8');
+      }
+    } catch (err) {
+      console.error(`\nFailed to write error file: ${err}`);
     }
   }
 
