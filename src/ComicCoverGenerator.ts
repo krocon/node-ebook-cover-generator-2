@@ -9,6 +9,16 @@ import { ImageProcessor } from './ImageProcessor';
 export class ComicCoverGenerator {
   constructor(private options: Options) {}
 
+  private formatErrorForLog(err: any): { message: string; stack?: string } {
+    if (err instanceof Error) {
+      return {
+        message: err.message || String(err),
+        stack: err.stack,
+      };
+    }
+    return { message: String(err) };
+  }
+
   public async run(): Promise<void> {
     const { sourceDir } = this.options;
     
@@ -66,26 +76,13 @@ export class ComicCoverGenerator {
           processed++;
           if (result.status === 'rejected') {
             errors.push({ file: chunk[index], error: result.reason });
-            const errorMsg = (result.reason instanceof Error ? result.reason.message : String(result.reason)).trim();
-            const displayMsg = errorMsg.split('\n')[0].trim();
-            
-            if (process.stdout.isTTY) {
-              readline.clearLine(process.stdout, 0);
-              readline.cursorTo(process.stdout, 0);
-            } else {
-              process.stdout.write('\n');
-            }
-            console.log(`Fehler bei ${chunk[index]}:\n  ${displayMsg}`);
           } else if ((result as any).value === 'skipped') {
             skippedCount++;
           }
           updateProgress();
         } catch (e) {
-          if (process.stdout.isTTY) {
-            readline.clearLine(process.stdout, 0);
-            readline.cursorTo(process.stdout, 0);
-          }
-          console.error(`Unerwarteter Fehler bei der Ergebnisverarbeitung: ${e}`);
+          errors.push({ file: '<internal:result-processing>', error: e });
+          updateProgress();
         }
       });
 
@@ -97,22 +94,7 @@ export class ComicCoverGenerator {
     }
     
     if (errors.length > 0) {
-      console.log(`\n\nAbgeschlossen mit ${errors.length} ${errors.length === 1 ? 'Fehler' : 'Fehlern'}.`);
-      const displayLimit = 10;
-      if (errors.length <= displayLimit) {
-        errors.forEach(e => {
-          const msg = e.error.message || String(e.error);
-          console.log(`- ${e.file}:\n  ${msg.replace(/\n/g, '\n  ')}`);
-        });
-      } else {
-        console.log(`Die ersten ${displayLimit} Fehler:`);
-        errors.slice(0, displayLimit).forEach(e => {
-          const msg = e.error.message || String(e.error);
-          console.log(`- ${e.file}:\n  ${msg.replace(/\n/g, '\n  ')}`);
-        });
-        console.log(`... und ${errors.length - displayLimit} weitere Fehler. Siehe ${this.options.errorFile} für Details.`);
-      }
-
+      console.log(`\n\nAbgeschlossen mit ${errors.length} ${errors.length === 1 ? 'Fehler' : 'Fehlern'}. Details siehe ${this.options.errorFile}.`);
       await this.writeErrorFile(errors);
     }
     console.log('\nFertig.');
@@ -121,14 +103,23 @@ export class ComicCoverGenerator {
   private async writeErrorFile(errors: {file: string, error: any}[]): Promise<void> {
     try {
       if (this.options.errorFile && errors.length > 0) {
-        const errorLog = errors.map(e => {
-          const msg = (e.error.message || String(e.error)).replace(/\r?\n/g, ' | ');
-          return `${e.file}: ${msg}`;
-        }).join('\n');
-        await fs.writeFile(this.options.errorFile, errorLog, 'utf8');
+        const now = new Date().toISOString();
+        const errorLog = errors.map((e, idx) => {
+          const formatted = this.formatErrorForLog(e.error);
+          const lines: string[] = [];
+          lines.push(`[${idx + 1}/${errors.length}] ${e.file}`);
+          lines.push(`Zeit: ${now}`);
+          lines.push(`Message: ${formatted.message}`);
+          if (formatted.stack) {
+            lines.push('Stack:');
+            lines.push(formatted.stack);
+          }
+          return lines.join('\n');
+        }).join('\n\n');
+        await fs.writeFile(this.options.errorFile, errorLog + '\n', 'utf8');
       }
     } catch (err) {
-      console.error(`\nFailed to write error file: ${err}`);
+      throw new Error(`Failed to write error file (${this.options.errorFile}): ${err}`);
     }
   }
 

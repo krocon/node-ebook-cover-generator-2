@@ -1,6 +1,7 @@
 import { ComicCoverGenerator } from './ComicCoverGenerator';
 import { Options } from './types';
 import * as path from 'path';
+import * as fs from 'fs-extra';
 
 let options: Options = {
   forceOverwrite: true,
@@ -25,13 +26,18 @@ async function main() {
     try {
         await generator.run();
     } catch (error: any) {
-        console.error('\n***************************************');
-        console.error('FATAL ERROR occurred during execution:');
-        console.error(error?.message || error);
-        if (error?.stack) {
-            console.error(error.stack);
+        // Fehler nur in die Error-Datei schreiben, damit die Konsolenausgabe (Progress) nicht gestört wird.
+        try {
+            const now = new Date().toISOString();
+            const message = error?.message || String(error);
+            const stack = error?.stack ? `\n${error.stack}` : '';
+            const block = `\n\n[FATAL] ${now}\n${message}${stack}\n`;
+            if (options.errorFile) {
+                await fs.appendFile(options.errorFile, block, 'utf8');
+            }
+        } catch {
+            // best-effort: keine Konsolenausgabe
         }
-        console.error('***************************************\n');
         process.exit(1);
     }
 }
