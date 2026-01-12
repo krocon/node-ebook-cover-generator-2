@@ -19,15 +19,25 @@
     "url": "https://krocon.de"
   },
   "scripts": {
-    "i": "npm install",
+    "start": "ts-node src/index.ts",
+    "build": "tsc",
+    "test": "node scripts/create-test-data.js && ts-node src/index.ts",
     "postinstall": "node scripts/check-7zip.js"
   },
   "dependencies": {
+    "7zip-bin": "^5.2.0",
     "fs-extra": "^11.3.3",
     "glob": "^13.0.0",
     "rimraf": "^6.1.2",
-    "shell-quote": "^1.8.3",
     "sharp": "^0.34.5",
-    "7zip-bin": "^5.2.0"
+    "shell-quote": "^1.8.3"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/glob": "^8.1.0",
+    "@types/node": "^25.0.6",
+    "@types/shell-quote": "^1.7.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }
