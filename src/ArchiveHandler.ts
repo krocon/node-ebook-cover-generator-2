@@ -16,7 +16,6 @@ export class ArchiveHandler {
         return await this.getRarFiles(archivePath);
       } catch (err) {
         // Fallback to 7z if RAR extraction fails (sometimes .cbr are actually ZIPs)
-        console.warn(`RAR extraction failed for ${archivePath}, trying 7z...`);
       }
     }
     return this.get7zFiles(archivePath);
@@ -32,9 +31,14 @@ export class ArchiveHandler {
 
   private static async get7zFiles(archivePath: string): Promise<string[]> {
     return new Promise((resolve, reject) => {
-      const child = spawn(path7za, ['l', '-ba', '-slt', archivePath]);
+      const child = spawn(path7za, ['l', '-ba', '-slt', '-y', '-p-', archivePath]);
       let output = '';
       let stderr = '';
+
+      const timeout = setTimeout(() => {
+        child.kill();
+        reject(new Error(`7z list timed out after 30s for ${archivePath}`));
+      }, 30000);
       
       child.stdout.on('data', (data) => {
         output += data.toString();
@@ -45,6 +49,7 @@ export class ArchiveHandler {
       });
 
       child.on('close', (code) => {
+        clearTimeout(timeout);
         if (code !== 0) {
           return reject(new Error(`7z exited with code ${code}. Stderr: ${stderr}`));
         }
@@ -72,7 +77,7 @@ export class ArchiveHandler {
       try {
         return await this.extractRarToBuffer(archivePath, fileName);
       } catch (err) {
-        console.warn(`RAR extraction failed for ${archivePath}, trying 7z...`);
+        // Fallback to 7z
       }
     }
     return this.extract7zToBuffer(archivePath, fileName);
@@ -93,9 +98,14 @@ export class ArchiveHandler {
   private static async extract7zToBuffer(archivePath: string, fileName: string): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       // 'e' means extract, '-so' means write to stdout
-      const child = spawn(path7za, ['e', archivePath, fileName, '-so']);
+      const child = spawn(path7za, ['e', '-y', '-p-', archivePath, fileName, '-so']);
       const chunks: Buffer[] = [];
       let stderr = '';
+
+      const timeout = setTimeout(() => {
+        child.kill();
+        reject(new Error(`7z extraction timed out after 30s for ${archivePath} (${fileName})`));
+      }, 30000);
 
       child.stdout.on('data', (chunk) => {
         chunks.push(chunk);
@@ -106,6 +116,7 @@ export class ArchiveHandler {
       });
 
       child.on('close', (code) => {
+        clearTimeout(timeout);
         if (code !== 0) {
           return reject(new Error(`7z extraction exited with code ${code}. Stderr: ${stderr}`));
         }

@@ -21,6 +21,7 @@ export class ComicCoverGenerator {
     const startTime = Date.now();
     let processed = 0;
     let skippedCount = 0;
+    const errors: {file: string, error: any}[] = [];
 
     const formatTime = (ms: number): string => {
       const seconds = Math.floor(ms / 1000);
@@ -50,14 +51,45 @@ export class ComicCoverGenerator {
       results.forEach((result, index) => {
         processed++;
         if (result.status === 'rejected') {
-          console.error(`\nError processing ${chunk[index]}:`, result.reason);
+          errors.push({ file: chunk[index], error: result.reason });
+          const errorMsg = (result.reason instanceof Error ? result.reason.message : String(result.reason)).trim();
+          // Show the first line of the error and the second line if it contains the actual 7z error
+          const lines = errorMsg.split('\n');
+          let displayMsg = lines[0];
+          if (lines.length > 1 && lines[1].trim()) {
+            displayMsg += ' | ' + lines[1].trim();
+          }
+          process.stdout.write(`\nError processing ${chunk[index]}: ${displayMsg}\n`);
         } else if ((result as any).value === 'skipped') {
           skippedCount++;
         }
         updateProgress();
       });
+
+      // Write error file every 10 files if errors exist
+      if (processed % 10 === 0) {
+        await this.writeErrorFile(errors);
+      }
+    }
+    
+    if (errors.length > 0) {
+      console.log(`\n\nCompleted with ${errors.length} errors.`);
+      if (errors.length <= 10) {
+        errors.forEach(e => console.log(`- ${e.file}: ${e.error.message || e.error}`));
+      } else {
+        console.log('See above for individual error messages.');
+      }
+
+      await this.writeErrorFile(errors);
     }
     console.log('\nDone.');
+  }
+
+  private async writeErrorFile(errors: {file: string, error: any}[]): Promise<void> {
+    if (this.options.errorFile && errors.length > 0) {
+      const errorLog = errors.map(e => `${e.file}: ${e.error.message || e.error}`).join('\n');
+      await fs.writeFile(this.options.errorFile, errorLog, 'utf8');
+    }
   }
 
   private async processComic(comicPath: string): Promise<'processed' | 'skipped'> {

@@ -4,12 +4,13 @@ import * as path from 'path';
 
 let options: Options = {
   forceOverwrite: true,
-  sourceDir: process.env.SOURCE_DIR || '/Users/marckronberg/comics.nosync',
+  sourceDir: process.env.SOURCE_DIR || 'd:/comics/_deu',
   outputDir: process.env.OUTPUT_DIR || null,
+  errorFile: 'error.txt',
   outputs: [
     {nameExtension: "", dimension: [200, 300]},     // abc.cbr -> abc.jpg
     {nameExtension: "_xl", dimension: [800, 1200]}, // abc.cbr -> abc_xl.jpg
-    {nameExtension: "_o", dimension: null}          // abc.cbr -> abc_o.jpg, original size.
+    // {nameExtension: "_o", dimension: null}          // abc.cbr -> abc_o.jpg, original size.
   ]
 };
 

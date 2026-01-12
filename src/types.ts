@@ -8,4 +8,5 @@ export interface Options {
   sourceDir: string;
   outputDir: string | null;
   outputs: OutputConfig[];
+  errorFile?: string;
 }

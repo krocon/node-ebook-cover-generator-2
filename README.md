@@ -67,6 +67,7 @@ The `ComicCoverGenerator` constructor takes an `Options` object. Below is the de
 | `outputDir` | `string \| null` | The directory where the generated covers will be saved. If `null`, covers will be saved in the same directory as the source comic file. |
 | `forceOverwrite` | `boolean` | If `true`, existing cover images will be re-generated. If `false`, the tool skips files where all configured outputs already exist. |
 | `outputs` | `OutputConfig[]` | An array of configurations defining what images should be generated for each comic. |
+| `errorFile` | `string` | (Optional) Path to a text file where errors and skipped files will be logged. |
 
 ### `OutputConfig` Interface
 
