@@ -28,6 +28,7 @@
     "7zip-bin": "^5.2.0",
     "fs-extra": "^11.3.3",
     "glob": "^13.0.0",
+    "node-unrar-js": "^2.0.2",
     "rimraf": "^6.1.2",
     "sharp": "^0.34.5",
     "shell-quote": "^1.8.3"

@@ -4,8 +4,7 @@ import * as path from 'path';
 
 let options: Options = {
   forceOverwrite: true,
-  sourceDir: '/Users/marckronberg/comics.nosync',
-  // sourceDir: process.env.SOURCE_DIR || path.join(__dirname, '../test-comics'),
+  sourceDir: process.env.SOURCE_DIR || '/Users/marckronberg/comics.nosync',
   outputDir: process.env.OUTPUT_DIR || null,
   outputs: [
     {nameExtension: "", dimension: [200, 300]},     // abc.cbr -> abc.jpg

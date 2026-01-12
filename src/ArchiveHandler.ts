@@ -1,22 +1,52 @@
 import { path7za } from '7zip-bin';
 import { spawn } from 'child_process';
-import { quote } from 'shell-quote';
+import * as fs from 'fs-extra';
+import { createExtractorFromData } from 'node-unrar-js';
 
 export class ArchiveHandler {
   private static imgFilePattern = /\.(jpg|jpeg|png|webp)$/i;
 
+  private static isRar(filePath: string): boolean {
+    return filePath.toLowerCase().endsWith('.cbr');
+  }
+
   public static async getFiles(archivePath: string): Promise<string[]> {
+    if (this.isRar(archivePath)) {
+      try {
+        return await this.getRarFiles(archivePath);
+      } catch (err) {
+        // Fallback to 7z if RAR extraction fails (sometimes .cbr are actually ZIPs)
+        console.warn(`RAR extraction failed for ${archivePath}, trying 7z...`);
+      }
+    }
+    return this.get7zFiles(archivePath);
+  }
+
+  private static async getRarFiles(archivePath: string): Promise<string[]> {
+    const data = await fs.readFile(archivePath);
+    const arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+    const extractor = await createExtractorFromData({ data: arrayBuffer as ArrayBuffer });
+    const list = extractor.getFileList();
+    return Array.from(list.fileHeaders).map(h => h.name);
+  }
+
+  private static async get7zFiles(archivePath: string): Promise<string[]> {
     return new Promise((resolve, reject) => {
       const child = spawn(path7za, ['l', '-ba', '-slt', archivePath]);
       let output = '';
+      let stderr = '';
       
       child.stdout.on('data', (data) => {
         output += data.toString();
       });
 
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
       child.on('close', (code) => {
         if (code !== 0) {
-          return reject(new Error(`7z exited with code ${code}`));
+          return reject(new Error(`7z exited with code ${code}. Stderr: ${stderr}`));
         }
 
         const files: string[] = [];
@@ -38,18 +68,46 @@ export class ArchiveHandler {
   }
 
   public static async extractFileToBuffer(archivePath: string, fileName: string): Promise<Buffer> {
+    if (this.isRar(archivePath)) {
+      try {
+        return await this.extractRarToBuffer(archivePath, fileName);
+      } catch (err) {
+        console.warn(`RAR extraction failed for ${archivePath}, trying 7z...`);
+      }
+    }
+    return this.extract7zToBuffer(archivePath, fileName);
+  }
+
+  private static async extractRarToBuffer(archivePath: string, fileName: string): Promise<Buffer> {
+    const data = await fs.readFile(archivePath);
+    const arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+    const extractor = await createExtractorFromData({ data: arrayBuffer as ArrayBuffer });
+    const extracted = extractor.extract({ files: [fileName] });
+    const files = Array.from(extracted.files);
+    if (files.length === 0 || !files[0].extraction) {
+      throw new Error(`File ${fileName} not found or extraction failed`);
+    }
+    return Buffer.from(files[0].extraction);
+  }
+
+  private static async extract7zToBuffer(archivePath: string, fileName: string): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       // 'e' means extract, '-so' means write to stdout
       const child = spawn(path7za, ['e', archivePath, fileName, '-so']);
       const chunks: Buffer[] = [];
+      let stderr = '';
 
       child.stdout.on('data', (chunk) => {
         chunks.push(chunk);
       });
 
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+      });
+
       child.on('close', (code) => {
         if (code !== 0) {
-          return reject(new Error(`7z extraction exited with code ${code}`));
+          return reject(new Error(`7z extraction exited with code ${code}. Stderr: ${stderr}`));
         }
         resolve(Buffer.concat(chunks));
       });
