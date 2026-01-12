@@ -1,0 +1,33 @@
+{
+  "name": "node-ebook-cover-generator-2",
+  "version": "1.0.0",
+  "description": "Extracts the first picture (cover) of an ebook (CBR, CBZ, CB7)",
+  "keywords": [
+    "Cover",
+    "Thumb",
+    "jpg",
+    "CBR",
+    "CBZ",
+    "CB7",
+    "ebook",
+    "image",
+    "generator"
+  ],
+  "author": {
+    "name": "Marc Kronberg",
+    "email": "krocon@gmail.com",
+    "url": "https://krocon.de"
+  },
+  "scripts": {
+    "i": "npm install",
+    "postinstall": "node scripts/check-7zip.js"
+  },
+  "dependencies": {
+    "fs-extra": "^11.3.3",
+    "glob": "^13.0.0",
+    "rimraf": "^6.1.2",
+    "shell-quote": "^1.8.3",
+    "sharp": "^0.34.5",
+    "7zip-bin": "^5.2.0"
+  }
+}
